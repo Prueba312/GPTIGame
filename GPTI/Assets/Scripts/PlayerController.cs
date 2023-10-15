@@ -4,91 +4,140 @@ using UnityEngine;
 
 public class PlayerController : MonoBehaviour
 {
-    [Header("References")]
-    public Rigidbody Rb;
-    public Transform head;
-    public Camera camera;
+    public static PlayerController instance;
 
-    [Header("Consfigurations")]
-    public float WalkSpeed;
+    public CharacterController characterController;
+
+    private Vector3 moveInput;
+
+    public Transform camTransform;
+
+    public Animator anim;
+
+    [Header("Gravity")]
+    public float gravityModifier;
+
+    [Header("Movement Controls")]
+    public float moveSpeed;
     public float runSpeed;
-    public float jumpSpeed;
+    public float jumpPower;
 
-    [Header("Runtime")]
-    Vector3 newVelocity;
-    bool isGrounded = false;
-    bool isJumping = false;
+    private bool canJump, canDoubleJump;
+    public Transform grounCheckPoint;
+    public LayerMask whatIsGround;
 
-    void Start() 
+    [Header("Camera Controls")]
+    public float mouseSensivity;
+    public bool invertX;
+    public bool invertY;
+
+    public GameObject bullet;
+    public Transform firePoint;
+
+
+    void Awake()
     {
-        Cursor.visible = false;
-        Cursor.lockState = CursorLockMode.Locked;        
+        instance = this;
     }
-    void Update() 
+
+    void Update()
     {
-        transform.Rotate(Vector3.up, Input.GetAxis("Mouse X") * 2f);
+        //moveInput.x = Input.GetAxis("Horizontal") * moveSpeed * Time.deltaTime;
+        //moveInput.z = Input.GetAxis("Vertical") * moveSpeed * Time.deltaTime;
 
-        newVelocity = Vector3.up * Rb.velocity.y;
-        float speed = Input.GetKey(KeyCode.LeftShift) ? runSpeed : WalkSpeed;
+        //guardar Y velocity
+        float yStore = moveInput.y;
 
-        newVelocity.x = Input.GetAxis("Horizontal") * speed;
-        newVelocity.z = Input.GetAxis("Vertical") * speed;
+        Vector3 vertMove = transform.forward * Input.GetAxis("Vertical");
+        Vector3 horitMove = transform.right * Input.GetAxis("Horizontal");
 
-        if(isGrounded)
+        moveInput = horitMove + vertMove;
+        moveInput.Normalize();
+        
+
+        if(Input.GetButton("Run")) 
         {
-            if(Input.GetKeyDown(KeyCode.Space) && !isJumping)
+            moveInput = moveInput * runSpeed;
+        }
+        else
+        {
+            moveInput = moveInput * moveSpeed;
+        }
+
+
+        moveInput.y = yStore;
+
+        //Gravedad
+        moveInput.y += Physics.gravity.y * gravityModifier * Time.deltaTime;
+
+        if (characterController.isGrounded)
+        {
+            moveInput.y = Physics.gravity.y * gravityModifier * Time.deltaTime;
+        }
+
+        //canJump = Physics.OverlapSphere(grounCheckPoint.position, .25f, whatIsGround).Length > 0;
+
+        canJump = characterController.isGrounded;
+
+        if(canJump)
+        {
+            canDoubleJump = false;
+        }
+
+
+        //Salto del jugador
+        if (Input.GetButtonDown("Jump") && canJump) 
+        {
+            moveInput.y = jumpPower;
+
+            canDoubleJump = true;
+        }else if(canDoubleJump && (Input.GetButtonDown("Jump")))
+        {
+            moveInput.y = jumpPower;
+
+            canDoubleJump = false;  
+        }
+
+
+        characterController.Move(moveInput * Time.deltaTime);
+
+
+        //Control Rotacion Camara
+        Vector2 mauseInput = new Vector2(Input.GetAxisRaw("Mouse X"), Input.GetAxisRaw("Mouse Y")) * mouseSensivity;
+
+        if (invertX)
+        {
+            mauseInput.x = -mauseInput.x;
+        }
+        if (invertY)
+        {
+            mauseInput.y = -mauseInput.y;
+        }
+
+        transform.rotation = Quaternion.Euler(transform.rotation.eulerAngles.x, transform.rotation.eulerAngles.y + mauseInput.x, transform.rotation.eulerAngles.z);
+
+        camTransform.rotation = Quaternion.Euler(camTransform.rotation.eulerAngles + new Vector3(-mauseInput.y, 0f, 0f));
+
+        //Shooting
+        if(Input.GetMouseButtonDown(0))
+        {
+            RaycastHit hit;
+            if(Physics.Raycast(camTransform.position, camTransform.forward, out hit, 50f))
             {
-                newVelocity.y = jumpSpeed;
-                isJumping = true;
+                if (Vector3.Distance(camTransform.position, hit.point) > 2f);
+                {
+                    firePoint.LookAt(hit.point);
+                }
+            }else
+            {
+                firePoint.LookAt(camTransform.position + (camTransform.forward * 30f));
             }
+
+
+            Instantiate(bullet, firePoint.position, firePoint.rotation);
         }
-        Rb.velocity = transform.TransformDirection(newVelocity);
-    }
-    void FixedUpdate() 
-    {
-        if (Physics.Raycast(transform.position, Vector3.down, out RaycastHit hit, 1f)) {
-            isGrounded = true;
-        }
-        else isGrounded = false;
-    }
 
-    void LateUpdate()
-    {
-        Vector3 e = head.eulerAngles;
-        e.x -= Input.GetAxis("Mouse Y") * 2f;
-        e.x = RestrictAngle(e.x, -85f, 85f);
-        head.eulerAngles = e;
-    }
-
-    void OnCollisionStay(Collision col)
-    {
-        isGrounded = true;
-        isJumping = false;
-    }
-
-    void OnCollisionExit(Collision col)
-    {
-        isGrounded = false;
-    }
-
-    public static float RestrictAngle(float Angle, float AngleMin, float AngleMax)
-    {
-        if (Angle > 180)
-        {
-            Angle -= 360;
-        }
-        else if (Angle < -180)
-        {
-            Angle += 360; 
-        }
-            
-        
-        if(Angle > AngleMax)
-            Angle = AngleMax;
-        if(Angle < AngleMin)
-            Angle = AngleMin;
-        
-        return Angle;
-
-    }
+        anim.SetFloat("moveSpeed", moveInput.magnitude);
+        anim.SetBool("onGround", canJump);
+    } 
 }
